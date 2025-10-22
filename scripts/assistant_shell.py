@@ -101,18 +101,38 @@ def main() -> None:
         action="store_true",
         help="Route requests through the fast-path model.",
     )
+    parser.add_argument(
+        "--session",
+        default="default",
+        help="Session identifier used for persistent memory.",
+    )
     args = parser.parse_args()
 
     runtime = RobotRuntime()
     runtime.assistant.ingest_documents(load_documents(args.docs))
+    tool_exec = runtime.assistant.tools
+    safety = runtime.safety
 
     persona = args.persona
-    history: List[Dict[str, str]] = []
+    session_id = args.session
+    stored_history = runtime.memory.get_recent_turns(session_id, runtime.config.memory.history_window * 2)
+    history: List[Dict[str, str]] = [
+        {"role": turn["role"], "content": turn["content"]}
+        for turn in stored_history
+    ]
+    preferences = runtime.memory.get_preferences(session_id)
     fast_mode = args.fast
     forced_model: Optional[str] = None
 
     print("--- Assistant shell ---")
-    print("Commands: /exit, /clear, /persona <text>, /model <default|fast|offline>, /history")
+    print(
+        "Commands: /exit, /clear, /persona <text>, /model <default|fast|offline>, "
+        "/history, /tools, /consent <tool>, /revoke <tool>, /prefs, /pref <key> <value>, "
+        "/priv <level>, /pause, /resume, /safety"
+    )
+    print(f"Active session: {session_id}")
+    if history:
+        print(f"(Loaded {len(history)} prior turns from memory)")
     print("Type your message and press Enter.")
 
     while True:
@@ -167,6 +187,70 @@ def main() -> None:
                     for turn in history:
                         print(f"{turn['role']}: {turn['content']}")
                 continue
+            if command == "/tools":
+                for info in tool_exec.list_tools():
+                    status = "granted" if info["consent_granted"] else (
+                        "required" if info["requires_consent"] else "not-needed"
+                    )
+                    print(
+                        f"- {info['name']} [{info['category']}] "
+                        f"({status}) :: {info['description']}"
+                    )
+                continue
+            if command == "/consent":
+                if not argument:
+                    print("Usage: /consent <tool_name>")
+                else:
+                    tool_exec.grant_consent(argument)
+                    print(f"Consent granted for {argument}")
+                continue
+            if command == "/revoke":
+                if not argument:
+                    print("Usage: /revoke <tool_name>")
+                else:
+                    tool_exec.revoke_consent(argument)
+                    print(f"Consent revoked for {argument}")
+                continue
+            if command == "/prefs":
+                if not preferences:
+                    print("(no stored preferences)")
+                else:
+                    for key, value in preferences.items():
+                        print(f"- {key}: {value}")
+                continue
+            if command == "/pref":
+                if not argument or " " not in argument:
+                    print("Usage: /pref <key> <value>")
+                else:
+                    key, value = argument.split(" ", 1)
+                    runtime.memory.set_preference(session_id, key, value)
+                    preferences[key] = value
+                    print(f"Preference updated: {key}={value}")
+                continue
+            if command == "/priv":
+                if not argument:
+                    print("Usage: /priv <informational|command>")
+                else:
+                    try:
+                        safety.set_privilege(argument)
+                        print(f"Privilege set to {safety.privilege_level}")
+                    except ValueError:
+                        print("Invalid privilege level. Options: informational, command.")
+                continue
+            if command == "/pause":
+                safety.pause()
+                print("Safety: paused privileged actions.")
+                continue
+            if command == "/resume":
+                safety.resume()
+                print("Safety: resumed privileged actions.")
+                continue
+            if command == "/safety":
+                print(
+                    f"Privilege={safety.privilege_level}, paused={safety.paused}, "
+                    f"log={safety.log_path}"
+                )
+                continue
 
             print("Unknown command.")
             continue
@@ -176,6 +260,8 @@ def main() -> None:
             "query": user_input,
             "history": history[-8:],
             "instructions": persona,
+            "session_id": session_id,
+            "preferences": preferences,
         }
         if fast_mode:
             intents["fast_path"] = True

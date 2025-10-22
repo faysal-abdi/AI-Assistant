@@ -29,3 +29,19 @@ This repository outlines the base structure for an automated robot that will mat
 - Add simulation tooling to validate controllers without physical hardware.
 - Introduce persistent storage and state logging for diagnostics.
 - Integrate policy learning modules once the deterministic pipeline is stable.
+
+### macOS Voice Dependencies
+
+To enable live microphone transcription and on-device speech synthesis, install the Apple framework bridges:
+
+```bash
+python3 -m pip install pyobjc pyobjc-framework-AVFoundation pyobjc-framework-Speech
+```
+
+Optional cross-platform audio capture helper:
+
+```bash
+python3 -m pip install sounddevice
+```
+
+After installing, run `python3 scripts/voice_demo.py` and approve the microphone permission prompt to try realtime voice interactions.

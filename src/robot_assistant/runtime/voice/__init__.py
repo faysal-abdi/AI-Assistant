@@ -6,6 +6,7 @@ from .orchestrator import (
     WakeWordDetector,
     SpeechSynthesizer,
     VoiceOrchestrator,
+    HAS_MAC_SPEECH,
 )
 
 __all__ = [
@@ -15,3 +16,8 @@ __all__ = [
     "SpeechSynthesizer",
     "VoiceOrchestrator",
 ]
+
+if HAS_MAC_SPEECH:  # pragma: no cover - optional
+    from .orchestrator import MacSpeechRecognizer, MacSpeechSynthesizer
+
+    __all__.extend(["MacSpeechRecognizer", "MacSpeechSynthesizer"])

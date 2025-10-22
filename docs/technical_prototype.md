@@ -39,8 +39,28 @@ Prototype classes live under `src/robot_assistant/runtime/ai/retrieval.py`. The 
   - `search_docs`: queries internal knowledge base via retriever.
   - `get_runtime_state`: introspects perception/planning state for embodied tasks.
   - `issue_command`: dispatches structured actions to the control subsystem with safety checks.
+  - `search_files`: scans allowlisted directories for relevant files.
+  - `run_shell_command`: executes allowlisted shell commands once consent is granted.
+  - `create_calendar_event`: (optional) scaffolds calendar entries through EventKit.
+  - `summarize_inbox`: (optional) summarizes recent email threads.
+  - `run_home_automation`: (optional) bridges into HomeKit for smart home actions.
 
 Refer to `src/robot_assistant/runtime/ai/tools.py` for the prototype implementation.
+
+### Tool Plugin Strategy
+
+- **Calendar & email**: Use macOS EventKit and MailKit via PyObjC wrappers; expose intent-specific helpers (`create_event`, `summarize_inbox`) that require explicit user consent tokens before execution.
+- **Shell actions**: Offer a constrained shell tool that only executes allowlisted commands and requires per-session confirmation; sandbox outputs (truncate, redact sensitive paths).
+- **File search**: Index local files via Spotlight/metadata APIs for speed, with a pure-Python fallback that walks allowlisted directories.
+- **Home automation**: Bridge HomeKit using the Home Control framework or third-party hubs; keep behind a feature flag so non-home users aren't impacted.
+- **Safety model**: Track consent + scope per tool, enforce rate limits, and emit structured audit logs so high-privilege tools remain transparent and revocable.
+
+## Memory & Preferences
+
+- **Short-term buffer**: The assistant automatically loads the last few turns from the SQLite store so each reply maintains conversational context.
+- **Persistent store**: Conversations and user preferences are stored under `var/memory.db` (configurable via `RuntimeConfig.memory`).
+- **Preference management**: Shell commands (`/prefs`, `/pref <key> <value>`) update the persistent store, letting the assistant tailor responses to user settings.
+- **Session IDs**: Multiple named sessions can run in parallel—supply `--session <id>` to the shell to resume earlier conversations.
 
 ## Orchestration Flow
 
@@ -67,8 +87,9 @@ Prototype instrumentation is provided via `LatencyProbe` in `src/robot_assistant
 
 ## Configuration & Safety
 
-- Centralized runtime configuration extends `RuntimeConfig` with model, tool, and retrieval sections.
+- Centralized runtime configuration extends `RuntimeConfig` with model, tool, memory, and safety sections.
 - Secrets managed via environment variables or vault integration (not included in prototype).
+- Safety manager enforces privilege tiers (`informational` vs `command`), supports pause/resume, and logs to `var/safety.log`.
 - Safety filters run synchronously in the interface layer; escalate high-risk intents to a human review queue stub.
 - Logging follows privacy policy: redact PII, attach request + user identifiers via hashed IDs.
 
@@ -103,7 +124,15 @@ For text-first iteration with memory and telemetry, launch the conversational sh
 python3 scripts/assistant_shell.py --stream
 ```
 
-The shell supports persona tweaks, model routing commands, history inspection, and prints latency + token metrics after each exchange.
+The shell supports persona tweaks, model routing commands, history inspection, `/tools` listings, consent management (`/consent` / `/revoke`), and safety controls (`/priv`, `/pause`, `/resume`, `/safety`), alongside latency + token metrics after each exchange.
+
+For continuous evaluation across modalities, run the scenario suite:
+
+```bash
+python3 scripts/evaluation_suite.py --json var/eval_report.json
+```
+
+It reports per-scenario latency, voice transcription accuracy, and command success rates, optionally writing a JSON summary for regression tracking.
 
 ## Voice Interface Roadmap
 
@@ -113,6 +142,23 @@ The shell supports persona tweaks, model routing commands, history inspection, a
 - **Audio session management**: Centralize microphone selection, audio metering, and session lifecycle to avoid conflicts with other apps.
 - **Event bus**: Emit intents when the wake detector fires, transcription chunks arrive, or speech playback completes so the existing runtime can react just like it does to protocol intents.
 - **Testing strategy**: Add a CLI harness that toggles wake word detection, records short utterances, and streams transcripts to the assistant pipeline, enabling latency + accuracy measurement on-device.
+
+### macOS Voice Setup
+
+1. Install the Apple framework bindings:
+
+   ```bash
+   python3 -m pip install pyobjc pyobjc-framework-AVFoundation pyobjc-framework-Speech
+   ```
+
+   (Optional) Install `sounddevice` if you need a cross-platform microphone fallback:
+
+   ```bash
+   python3 -m pip install sounddevice
+   ```
+
+2. Run the conversational shell or voice demo. The runtime will automatically select the macOS-native recognizer (`SFSpeechRecognizer` + `AVAudioEngine`) and pipe responses through `NSSpeechSynthesizer`.
+3. On the first invocation, macOS prompts for microphone access—approve it in System Settings ▸ Privacy & Security ▸ Microphone.
 
 ## Conversational Shell Roadmap
 

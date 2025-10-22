@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
 from robot_assistant.config.defaults import RuntimeConfig
+from robot_assistant.runtime.memory import ConversationMemory
+from robot_assistant.runtime.safety import SafetyManager
 
 from .models import ModelGateway, ModelResponse
 from .retrieval import Document, EmbeddingProvider, InMemoryVectorStore, KnowledgeRetriever
@@ -34,6 +36,8 @@ class AssistantPipeline:
         retriever: Optional[KnowledgeRetriever] = None,
         tools: Optional[ToolExecutor] = None,
         telemetry: Optional[LatencyProbe] = None,
+        memory: Optional[ConversationMemory] = None,
+        safety: Optional[SafetyManager] = None,
     ) -> None:
         self.config = config
         self.telemetry = telemetry or LatencyProbe()
@@ -43,7 +47,9 @@ class AssistantPipeline:
             vector_store = InMemoryVectorStore(embedder)
             retriever = KnowledgeRetriever(vector_store, config.retrieval)
         self.retriever = retriever
-        self.tools = tools or ToolExecutor(self.retriever, config.tooling)
+        self.safety = safety or SafetyManager(config.safety)
+        self.tools = tools or ToolExecutor(self.retriever, config.tooling, safety=self.safety)
+        self.memory = memory
 
     def ingest_documents(self, documents: Iterable[Document]) -> None:
         """Add domain documents to the retrieval store."""
@@ -55,6 +61,7 @@ class AssistantPipeline:
         latency_summary: Dict[str, float] = {}
         self.telemetry.flush()
 
+        session_id = intents.get("session_id", "default")
         query = intents.get("query") or intents.get("text") or intents.get("message")
 
         context_packages: List[Dict[str, Any]] = []
@@ -69,8 +76,14 @@ class AssistantPipeline:
             if result.success:
                 context_packages.extend(result.output.get("matches", []))
 
+        history = intents.get("history")
+        if history is None and self.memory:
+            history = self.memory.get_recent_turns(session_id, self.config.memory.history_window)
+        if history is None:
+            history = []
+
         with self.telemetry.track("prompt_build"):
-            prompt = self._build_prompt(query, intents, context_packages, state)
+            prompt = self._build_prompt(query, intents, context_packages, state, history)
 
         with self.telemetry.track("generation"):
             response = self.model_gateway.generate(prompt, intents)
@@ -88,7 +101,7 @@ class AssistantPipeline:
             latency_breakdown_ms=latency_summary,
         )
 
-        return {
+        payload = {
             "type": "assistant",
             "response": assistant_output.response,
             "metadata": {
@@ -99,18 +112,44 @@ class AssistantPipeline:
             },
         }
 
+        if self.memory:
+            if query:
+                self.memory.append_turn(
+                    session_id,
+                    "user",
+                    query,
+                    metadata=self._coerce_metadata(
+                        {
+                            "source": intents.get("source", "text"),
+                            "confidence": str(intents.get("confidence", "")),
+                        }
+                    ),
+                )
+            if assistant_output.response:
+                self.memory.append_turn(
+                    session_id,
+                    "assistant",
+                    assistant_output.response,
+                    metadata={"model": assistant_output.model},
+                )
+            preferences = intents.get("preferences", {})
+            for key, value in preferences.items():
+                self.memory.set_preference(session_id, key, str(value))
+
+        return payload
+
     def _build_prompt(
         self,
         query: Optional[str],
         intents: Dict[str, Any],
         context_packages: List[Dict[str, Any]],
         state: Dict[str, Any],
+        history: List[Dict[str, Any]],
     ) -> str:
         """Construct the model prompt with retrieved context."""
         instructions = intents.get("instructions") or "You are a helpful AI assistant."
         sections = [instructions]
 
-        history: List[Dict[str, Any]] = intents.get("history", [])
         if history:
             sections.append("Conversation history (most recent first):")
             for turn in history[-5:]:
@@ -141,3 +180,7 @@ class AssistantPipeline:
             "error": result.error,
             "output": result.output,
         }
+
+    @staticmethod
+    def _coerce_metadata(metadata: Dict[str, Any]) -> Dict[str, str]:
+        return {key: str(value) for key, value in metadata.items() if value not in (None, "")}
