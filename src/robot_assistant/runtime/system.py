@@ -11,6 +11,8 @@ from robot_assistant.skills.registry import SkillRegistry
 from robot_assistant.interface.protocol import InteractionProtocol
 from robot_assistant.runtime.ai import AssistantPipeline
 from robot_assistant.runtime.voice import VoiceOrchestrator
+from robot_assistant.runtime.memory import ConversationMemory
+from robot_assistant.runtime.safety import SafetyManager
 
 
 class RobotRuntime:
@@ -27,6 +29,8 @@ class RobotRuntime:
         interface: Optional[InteractionProtocol] = None,
         assistant: Optional[AssistantPipeline] = None,
         voice: Optional[VoiceOrchestrator] = None,
+        memory: Optional[ConversationMemory] = None,
+        safety: Optional[SafetyManager] = None,
     ) -> None:
         self.config = config or RuntimeConfig()
         self.hardware = hardware or HardwareSuite()
@@ -35,10 +39,16 @@ class RobotRuntime:
         self.controller = controller or Controller(self.hardware, self.config)
         self.skills = skills or SkillRegistry(self.planner, self.controller)
         self.voice = voice or VoiceOrchestrator(self.config)
+        self.safety = safety or SafetyManager(self.config.safety)
+        self.memory = memory or ConversationMemory(self.config.memory)
         self.interface = interface or InteractionProtocol(self.voice)
         if interface is not None and self.voice:
             self.interface.attach_voice(self.voice)
-        self.assistant = assistant or AssistantPipeline(self.config)
+        self.assistant = assistant or AssistantPipeline(
+            self.config,
+            memory=self.memory,
+            safety=self.safety,
+        )
         self.skills.register("assistant", self.assistant.handle)
 
     def step(self) -> Dict[str, Any]:
@@ -56,3 +66,6 @@ class RobotRuntime:
         """Gracefully stop the runtime."""
         self.interface.close()
         self.hardware.shutdown()
+        if hasattr(self.voice, "shutdown"):
+            self.voice.shutdown()
+        self.memory.close()
