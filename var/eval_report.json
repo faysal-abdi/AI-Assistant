@@ -1,0 +1,58 @@
+{
+  "text": {
+    "scenarios": [
+      {
+        "name": "retrieval_overview",
+        "latency_ms": 1.815581999999996
+      },
+      {
+        "name": "tooling_question",
+        "latency_ms": 1.3236670000000004
+      },
+      {
+        "name": "safety_modes",
+        "latency_ms": 1.3363330000000089
+      }
+    ],
+    "average_latency_ms": 1.4918606666666685
+  },
+  "voice": {
+    "scenarios": [
+      {
+        "name": "status_check",
+        "recognized": "Jarvis give me a quick status update.",
+        "expected": "Jarvis give me a quick status update.",
+        "accuracy": 1.0,
+        "latency_ms": 1.2968340000000107
+      },
+      {
+        "name": "tool_request",
+        "recognized": "Jarvis search the knowledge base for memory features.",
+        "expected": "Jarvis search the knowledge base for memory features.",
+        "accuracy": 1.0,
+        "latency_ms": 1.2624170000000157
+      }
+    ],
+    "average_accuracy": 1.0
+  },
+  "commands": {
+    "scenarios": [
+      {
+        "name": "no_consent",
+        "status": "error",
+        "error": "consent required"
+      },
+      {
+        "name": "paused",
+        "status": "blocked",
+        "error": "safety_paused"
+      },
+      {
+        "name": "authorized",
+        "status": "accepted",
+        "error": ""
+      }
+    ],
+    "success_rate": 0.3333333333333333
+  }
+}

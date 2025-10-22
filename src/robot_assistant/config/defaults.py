@@ -1,7 +1,7 @@
 """Default configuration definitions for the robot assistant."""
 
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 
 @dataclass
@@ -32,6 +32,20 @@ class ToolingConfig:
     auto_search: bool = True
     max_tool_time_ms: int = 600
     allow_control_commands: bool = False
+    allow_shell_commands: bool = False
+    shell_allowlist: List[str] = field(default_factory=lambda: ["pwd", "ls"])
+    file_search_roots: List[str] = field(default_factory=lambda: ["docs"])
+    enable_calendar_tools: bool = False
+    enable_email_tools: bool = False
+    enable_home_automation: bool = False
+
+
+@dataclass
+class MemoryConfig:
+    """Persistent memory configuration."""
+
+    db_path: str = "var/memory.db"
+    history_window: int = 8
 
 
 @dataclass
@@ -47,6 +61,15 @@ class VoiceConfig:
 
 
 @dataclass
+class SafetyConfig:
+    """Safety and privilege configuration."""
+
+    default_privilege: str = "informational"
+    audit_log_path: str = "var/safety.log"
+    pause_on_start: bool = False
+
+
+@dataclass
 class RuntimeConfig:
     """Base configuration for the runtime and downstream subsystems."""
 
@@ -57,4 +80,6 @@ class RuntimeConfig:
     models: ModelRoutingConfig = field(default_factory=ModelRoutingConfig)
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     tooling: ToolingConfig = field(default_factory=ToolingConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
+    safety: SafetyConfig = field(default_factory=SafetyConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
