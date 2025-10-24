@@ -23,6 +23,26 @@ This repository outlines the base structure for an automated robot that will mat
 1. Extend `docs/architecture.md` with platform-specific requirements.
 2. Implement hardware stubs in `src/robot_assistant/hardware` to model actuators and sensors.
 3. Evolve the runtime loop in `src/robot_assistant/runtime/system.py` to coordinate perception, planning, and control.
+4. Persist runtime configuration with `src/robot_assistant/config/runtime_store.py`; defaults write to `var/runtime_config.json`.
+
+### Configuration Service & Dashboard
+
+- **API**: `scripts/config_server.py` launches a FastAPI surface that exposes `/config` CRUD, section-specific patches, session preference helpers, tooling consent metadata, and safety log inspection. Protect it by exporting `ROBOT_ASSISTANT_CONFIG_TOKEN`; adjust allowed origins via `ROBOT_ASSISTANT_CONFIG_CORS`.
+- **Run**:
+  ```bash
+  # install python deps
+  pip install fastapi uvicorn pydantic
+
+  # start the api
+  python3 scripts/config_server.py --port 8080
+  ```
+- **UI**: `ui/config-dashboard` is a Vite + React experience (React Query + Axios). Configure `.env.local` with `VITE_CONFIG_API_URL` and optional `VITE_CONFIG_API_TOKEN`.
+  ```bash
+  cd ui/config-dashboard
+  npm install
+  npm run dev
+  ```
+- The dashboard provides controls for loop cadence, model routing, retrieval mix, tooling guardrails, voice preferences, memory sizing, session preferences, and a live safety audit log feed.
 
 ### Next Steps
 

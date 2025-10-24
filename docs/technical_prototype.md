@@ -87,7 +87,8 @@ Prototype instrumentation is provided via `LatencyProbe` in `src/robot_assistant
 
 ## Configuration & Safety
 
-- Centralized runtime configuration extends `RuntimeConfig` with model, tool, memory, and safety sections.
+- Centralized runtime configuration extends `RuntimeConfig` with model, tool, retrieval, memory, and voice sections.
+- Configuration snapshots persist to `var/runtime_config.json`; helper utilities in `src/robot_assistant/config/runtime_store.py` load/validate JSON into dataclasses.
 - Secrets managed via environment variables or vault integration (not included in prototype).
 - Safety manager enforces privilege tiers (`informational` vs `command`), supports pause/resume, and logs to `var/safety.log`.
 - Safety filters run synchronously in the interface layer; escalate high-risk intents to a human review queue stub.
@@ -124,7 +125,19 @@ For text-first iteration with memory and telemetry, launch the conversational sh
 python3 scripts/assistant_shell.py --stream
 ```
 
-The shell supports persona tweaks, model routing commands, history inspection, `/tools` listings, consent management (`/consent` / `/revoke`), and safety controls (`/priv`, `/pause`, `/resume`, `/safety`), alongside latency + token metrics after each exchange.
+The shell supports persona tweaks, model routing commands, history inspection, `/tools` listings, consent management (`/consent` / `/revoke`), `/prefs` inspection, and safety controls (`/priv`, `/pause`, `/resume`, `/safety`), alongside latency + token metrics after each exchange.
+
+## Configuration UI & API
+
+- **Service**: `scripts/config_server.py` starts the FastAPI config surface (`robot_assistant.service.config_api`). Endpoints expose full config retrieval, section-level patches, session preference helpers, tooling consent metadata, and a safety log tail. Protect it with `ROBOT_ASSISTANT_CONFIG_TOKEN`; adjust CORS via `ROBOT_ASSISTANT_CONFIG_CORS`.
+- **Persistence**: Updates merge into the in-memory cache and write to `var/runtime_config.json` immediately. Preference and safety endpoints read directly from the SQLite store and audit log used by the runtime.
+- **Dashboard**: `ui/config-dashboard` provides a Vite + React console using React Query + Axios. It surfaces loop cadence, model routing, retrieval weights, tooling guardrails, voice controls, memory sizing, session preferences, and safety telemetry with optimistic save flows.
+- **Usage**:
+  1. Install Python deps: `pip install fastapi uvicorn pydantic`.
+  2. Install UI deps: `cd ui/config-dashboard && npm install`.
+  3. Start the API server: `python3 scripts/config_server.py --port 8080`.
+  4. Launch the dashboard: `npm run dev` (defaults to http://127.0.0.1:5173). Provide `.env.local` entries for `VITE_CONFIG_API_URL` and `VITE_CONFIG_API_TOKEN` as needed.
+- **Diagnostics**: The tooling card mirrors consent requirements, while the safety card streams structured audit entries from `var/safety.log` for rapid review of privileged tool activity.
 
 For continuous evaluation across modalities, run the scenario suite:
 
